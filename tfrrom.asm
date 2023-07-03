@@ -1,26 +1,54 @@
 * A simple program to transfer the contents of a contiguous block of memory
 * over the CoCo's bit-banger port to a host.
 
+* Set the beginning and end of desired memory to send
 TFRBEG	equ		$C000
 TFREND	equ		$DFFF
 
 BBOUT       equ    $FF20
 BBIN        equ    $FF22
 OP_WRITE    equ    'W		Write one sector
+OP_NAMEOBJ_MOUNT	equ	$01
+OP_NAMEOBJ_CREATE	equ	$02
 
 		org		$6000
 Start
+* Create the named object
+		lda		#OP_NAMEOBJ_CREATE
 		leax	ObjCr,pcr
+		sta		,x
 		ldy		#ObjCrL
  		lbsr	DWWrite
- 		bcs		Error
+ 		lbcs	Error
+
+* Get the response from the create 		
+ 		leax	ObjNum,pcr
+ 		ldy		#$0001
+ 		lbsr	DWRead
+ 		lbcs	Error
+		tst		ObjNum,pcr			0?
+		bne		StartTfr
+		
+* If the create failed, mount the named object
+		lda		#OP_NAMEOBJ_MOUNT
+		leax	ObjCr,pcr
+		sta		,x
+		ldy		#ObjCrL
+ 		lbsr	DWWrite
+ 		lbcs	Error
+
+* Get the response from the mount
  		leax	ObjNum,pcr
  		ldy		#$0001
  		lbsr	DWRead
  		bcs		Error
- * We have the named object drive number.
+		tst		ObjNum,pcr			0?
+		beq		Error
 
+* Begin transferring
+StartTfr
  		ldu		#TFRBEG
+ 		clr		LSN12+1,pcr
  		
 WriteIt 		
 		leax	WriteBlock,pcr
@@ -43,8 +71,12 @@ WriteIt
 		lbsr	DWWrite
   		
 * read response from server to OP_WRITE  		
+		leax	Response,pcr
   		ldy		#$0001
   		lbsr	DWRead
+  		bcs		Error
+  		tst		Response,pcr
+  		bne		Error
   		
 * continue if not done
         leau    256,u
@@ -76,17 +108,10 @@ Name	fcc		"XROM"
 NameLen	equ		*-Name
 ObjCrL	equ		*-ObjCr
 
-ARDUINO	equ		0
-BECKER	equ		0
-JMCPBCK	equ		0
-BECKERTO	equ	0
-SY6551N	equ		0
-BAUD38400	equ	0
+Response fcb	$00
+
 NOINTMASK	equ	0
-H6309	equ		0
-V.SCF	equ		0
 IntMasks	equ	$50
-Vi.PkSz	equ		0
 		
 *******************************************************
 *
